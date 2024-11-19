@@ -43,6 +43,14 @@ func NewFileManager() (*FileManager, error) {
 	}, nil
 }
 
+// SaveLangFiles saves language files concurrently to disk
+// Params:
+//   - langs: slice of Language identifiers to save
+//   - data: slice of JSON byte data corresponding to each language
+//
+// Returns:
+//   - map[Language]string: mapping of Language to saved file paths
+//   - error: if any error occurs during directory creation or file saving
 func (fm *FileManager) SaveLangFiles(langs []Language, data [][]byte) (map[Language]string, error) {
 	langFilePaths := make(map[Language]string)
 	if err := validatePath(fm.langPath, true); err != nil {

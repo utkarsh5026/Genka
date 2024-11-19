@@ -41,6 +41,17 @@ func NewResourceLoader(fm *FileManager, langs []Language) *ResourceLoader {
 	}
 }
 
+// LoadLangFiles concurrently downloads language files for all configured languages.
+// It uses goroutines to fetch files in parallel, collects any errors that occur,
+// and saves the downloaded files using the FileManager.
+//
+// The function creates an HTTP client and launches a goroutine for each language
+// to download its corresponding file. It waits for all downloads to complete
+// before checking for errors and saving the files.
+//
+// Returns:
+//   - error: Returns nil if all files were successfully downloaded and saved,
+//     or an error describing what went wrong during the process
 func (rl *ResourceLoader) LoadLangFiles() error {
 	var wg sync.WaitGroup
 	result := make([][]byte, len(rl.langs))
@@ -75,6 +86,17 @@ func (rl *ResourceLoader) LoadLangFiles() error {
 	return nil
 }
 
+// loadLangFile downloads and reads a language file for the specified language.
+// It constructs the URL using the language code, makes an HTTP GET request,
+// and returns the file contents as a byte slice.
+//
+// Parameters:
+//   - lang: The Language identifier for the file to load
+//   - client: The HTTP client to use for the request
+//
+// Returns:
+//   - []byte: The contents of the language file
+//   - error: Any error that occurred during the download/read process
 func (rl *ResourceLoader) loadLangFile(lang Language, client *http.Client) ([]byte, error) {
 	var result []byte
 	url := fmt.Sprintf("%sTextMap%s.json?ref_type=heads&inline=false",
