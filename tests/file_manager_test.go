@@ -38,7 +38,7 @@ func TestSaveDataFiles(t *testing.T) {
 		t.Fatalf("Failed to create FileManager: %v", err)
 	}
 
-	fileNames := []data.FileName{data.ArtifactMainStatFile, data.ArchonDataFile}
+	fileNames := []data.GenshinDataFileName{data.ArtifactMainStatFile, data.ArchonDataFile}
 	data := [][]byte{
 		[]byte(`{"score": 100}`),
 		[]byte(`{"score": 200}`),

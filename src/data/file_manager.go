@@ -137,7 +137,7 @@ func (fm *FileManager) SaveLangFiles(langs []Language, data [][]byte) (map[Langu
 // Returns:
 //   - map[FileName]string: Map of FileNames to their saved file paths
 //   - error: Any error that occurred during saving
-func (fm *FileManager) SaveDataFiles(filesNames []FileName, data [][]byte) (map[FileName]string, error) {
+func (fm *FileManager) SaveDataFiles(filesNames []GenshinDataFileName, data [][]byte) (map[GenshinDataFileName]string, error) {
 	fileNames := make([]string, len(filesNames))
 	for i, fileName := range filesNames {
 		fileNames[i] = string(fileName)
@@ -148,9 +148,9 @@ func (fm *FileManager) SaveDataFiles(filesNames []FileName, data [][]byte) (map[
 	}
 
 	// Convert map[string]string to map[FileName]string
-	result := make(map[FileName]string)
+	result := make(map[GenshinDataFileName]string)
 	for i, path := range dataFilePaths {
-		result[FileName(i)] = path
+		result[GenshinDataFileName(i)] = path
 	}
 	return result, nil
 }
@@ -181,4 +181,9 @@ func validatePath(path string, createIfNotExists bool) error {
 func isValidJSON(data []byte) bool {
 	var js interface{}
 	return json.Unmarshal(data, &js) == nil
+}
+
+func (fm *FileManager) LoadFile(file GenshinDataFileName) ([]byte, error) {
+	filePath := filepath.Join(fm.dataPath, fmt.Sprintf("%s.json", file))
+	return os.ReadFile(filePath)
 }

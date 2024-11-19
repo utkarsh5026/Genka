@@ -3,7 +3,9 @@ package data
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 )
@@ -13,7 +15,7 @@ type Language string
 const (
 	GitlabUrl           = "https://gitlab.com/Dimbreath/AnimeGameData/-/tree/master/"
 	LanguageMapFilesUrl = "https://gitlab.com/Dimbreath/AnimeGameData/-/raw/master/TextMap/"
-	DataFilesUrl        = "https://gitlab.com/Dimbreath/AnimeGameData/-/raw/master/ExcelBinOutput/"
+	GenshinDataFilesUrl = "https://gitlab.com/Dimbreath/AnimeGameData/-/raw/master/ExcelBinOutput/"
 
 	LangSimplifiedChinese  Language = "chs"
 	LangTraditionalChinese Language = "cht"
@@ -30,20 +32,21 @@ const (
 	LangVietnamese         Language = "vi"
 )
 
-type ResourceLoaderOptions struct {
-	DataFiles []FileName
-	Langs     []Language
-}
-
 type ResourceLoader struct {
-	fm   *FileManager
-	opts ResourceLoaderOptions
+	fm             *FileManager
+	loggingEnabled bool
+	logger         *log.Logger
 }
 
-func NewResourceLoader(fm *FileManager, opts ResourceLoaderOptions) *ResourceLoader {
+func NewResourceLoader(fm *FileManager, loggingEnabled bool) *ResourceLoader {
+	var logger *log.Logger
+	if loggingEnabled {
+		logger = log.New(os.Stdout, "ResourceLoader: ", log.LstdFlags)
+	}
 	return &ResourceLoader{
-		fm:   fm,
-		opts: opts,
+		fm:             fm,
+		loggingEnabled: loggingEnabled,
+		logger:         logger,
 	}
 }
 
@@ -58,9 +61,8 @@ func NewResourceLoader(fm *FileManager, opts ResourceLoaderOptions) *ResourceLoa
 // Returns:
 //   - error: Returns nil if all files were successfully downloaded and saved,
 //     or an error describing what went wrong during the process
-func (rl *ResourceLoader) LoadLangFiles() error {
+func (rl *ResourceLoader) LoadLangFiles(langs []Language) error {
 	var wg sync.WaitGroup
-	langs := rl.opts.Langs
 	result := make([][]byte, len(langs))
 	errs := make([]error, len(langs))
 	client := &http.Client{}
@@ -98,9 +100,12 @@ func (rl *ResourceLoader) LoadLangFiles() error {
 	return nil
 }
 
-// LoadDataFiles concurrently downloads game data files configured in ResourceLoaderOptions.
+// LoadDataFiles concurrently downloads game data files from the configured repository.
 // It uses goroutines to fetch files in parallel, collects any errors that occur,
 // and saves the downloaded files using the FileManager.
+//
+// Parameters:
+//   - dataFiles: A slice of GenshinDataFileName values specifying which files to download
 //
 // The function creates an HTTP client and launches a goroutine for each data file
 // to download its corresponding JSON file. It waits for all downloads to complete
@@ -109,9 +114,8 @@ func (rl *ResourceLoader) LoadLangFiles() error {
 // Returns:
 //   - error: Returns nil if all files were successfully downloaded and saved,
 //     or an error describing what went wrong during the process
-func (rl *ResourceLoader) LoadDataFiles() error {
+func (rl *ResourceLoader) LoadDataFiles(dataFiles []GenshinDataFileName) error {
 	var wg sync.WaitGroup
-	dataFiles := rl.opts.DataFiles
 	result := make([][]byte, len(dataFiles))
 	errs := make([]error, len(dataFiles))
 	client := &http.Client{}
@@ -121,7 +125,7 @@ func (rl *ResourceLoader) LoadDataFiles() error {
 		go func(idx int) {
 			defer wg.Done()
 			file := dataFiles[idx]
-			url := fmt.Sprintf("%s%s.json?ref_type=heads&inline=false", DataFilesUrl, file)
+			url := getDataFileUrl(file)
 			data, err := rl.loadFileFromUrl(url, client)
 			result[idx] = data
 			errs[idx] = err
@@ -178,4 +182,85 @@ func (rl *ResourceLoader) loadFileFromUrl(url string, client *http.Client) ([]by
 	}
 	result = append(result, data...)
 	return result, nil
+}
+
+// GetFile loads a data file from disk or downloads it if missing.
+// It first attempts to load the file from the local filesystem using FileManager.
+// If the file doesn't exist and downloadIfMissing is true, it will download
+// the file from the remote URL and save it locally before returning the contents.
+//
+// Parameters:
+//   - file: The FileName enum indicating which data file to load
+//   - downloadIfMissing: Whether to download the file if it doesn't exist locally
+//
+// Returns:
+//   - []byte: The contents of the loaded file
+func (rl *ResourceLoader) GetFile(file GenshinDataFileName, downloadIfMissing bool) ([]byte, error) {
+	data, err := rl.fm.LoadFile(file)
+	if err != nil && os.IsNotExist(err) && downloadIfMissing {
+		url := getDataFileUrl(file)
+		fmt.Printf("File is missing so downloading the data file %s\n from %s\n", file, url)
+
+		data, err = rl.loadFileFromUrl(url, http.DefaultClient)
+		if err != nil {
+			return nil, err
+		}
+		_, err = rl.fm.SaveDataFiles([]GenshinDataFileName{file}, [][]byte{data})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to load data file %s: %w", file, err)
+	}
+
+	fmt.Printf("Loaded data file %s\n", file)
+	return data, nil
+}
+
+// GetLangDirPath returns the path to the language files directory.
+func (rl *ResourceLoader) GetLangDirPath() string {
+	return rl.fm.langPath
+}
+
+// GetDataDirPath returns the path to the data files directory.
+func (rl *ResourceLoader) GetDataDirPath() string {
+	return rl.fm.dataPath
+}
+
+// DownloadAllDataFiles concurrently downloads all Genshin Impact data files from the remote repository and saves them locally
+//
+// The function spawns a goroutine for each file to download, allowing parallel downloads.
+//
+// Returns:
+//   - error: The first error encountered during downloads, or nil if all downloads succeed
+func (rl *ResourceLoader) DownloadAllDataFiles() error {
+	fileNames := GetGenshinDataFileNames()
+	return rl.LoadDataFiles(fileNames)
+}
+
+func (rl *ResourceLoader) DownLoadAllLanguageFiles() error {
+	langs := []Language{
+		LangSimplifiedChinese,
+		LangTraditionalChinese,
+		LangGerman,
+		LangEnglish,
+		LangSpanish,
+		LangFrench,
+		LangIndonesian,
+		LangJapanese,
+		LangKorean,
+		LangPortuguese,
+		LangRussian,
+		LangThai,
+		LangVietnamese,
+	}
+
+	return rl.LoadLangFiles(langs)
+}
+
+// getDataFileUrl constructs the URL for downloading a Genshin Impact data file
+func getDataFileUrl(file GenshinDataFileName) string {
+	return fmt.Sprintf("%s%s.json?ref_type=heads&inline=false", GenshinDataFilesUrl, file)
 }
